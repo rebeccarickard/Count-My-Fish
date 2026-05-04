@@ -3,7 +3,9 @@ pandas
 requests
 plotly
 geopy
-streamlit-geolocation
+streamlit_geolocation
 joblib
 scikit-learn
 xgboost
+numpy
+protobuf
