@@ -1,9 +1,0 @@
-streamlit
-pandas
-requests
-plotly
-geopy
-streamlit-geolocation
-joblib
-scikit-learn
-xgboost
