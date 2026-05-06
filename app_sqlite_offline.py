@@ -11,8 +11,7 @@ from geopy.geocoders import Nominatim
 from streamlit_geolocation import streamlit_geolocation
 import plotly.express as px
 import base64
-
-import base64
+import hashlib
 
 def get_base64_image(image_path):
     with open(image_path, "rb") as img_file:
@@ -24,7 +23,16 @@ bg_image = get_base64_image(image_path)
 # -------------------------------------------------
 # PAGE SETUP
 # -------------------------------------------------
-st.set_page_config(page_title="NC Fishing Score", page_icon="🎣", layout="centered")
+st.set_page_config(page_title="Count My Fish", page_icon="🎣", layout="centered")
+
+st.markdown("""
+<div style='text-align: center; padding-top: 0.5rem; padding-bottom: 1rem;'>
+    <h1 style='color:#174A5C; margin-bottom:0;'>🎣 Count My Fish</h1>
+    <p style='font-size:18px; color:#2F5D6B; margin-top:0;'>
+        Fish smarter - your NC fishing companion
+    </p>
+</div>
+""", unsafe_allow_html=True)
 
 st.markdown(f"""
 <style>
@@ -106,10 +114,28 @@ div[data-testid="stMetric"] {{
 </style>
 """, unsafe_allow_html=True)
 
+pages = [
+    "Profile",
+    "Fishing Report",
+    "Log Catch",
+    "My Catch Log",
+    "Challenges",
+    "Community",
+    "Map",
+    "Agency Report"
+]
+
+default_page = st.session_state.get("current_page", "Profile")
+
 page = st.sidebar.radio(
     "Navigation",
-    ["Profile", "Fishing Score", "Log Catch", "My Catch Log", "Challenges", "Community", "Map", "Agency Report"]
+    pages,
+    index=pages.index(default_page) if default_page in pages else 0
 )
+
+if st.session_state.get("login_success"):
+    st.success(f"Successfully logged in as {st.session_state['username']} 🎣")
+    st.session_state["login_success"] = False
 
 st.sidebar.markdown("---")
 connection_mode = st.sidebar.radio(
@@ -160,6 +186,14 @@ def get_db_connection():
     conn = sqlite3.connect(DB_PATH)
     conn.row_factory = sqlite3.Row
     return conn
+
+
+def hash_password(password):
+    return hashlib.sha256(password.encode()).hexdigest()
+
+
+def check_password(password, password_hash):
+    return hash_password(password) == password_hash
 
 
 def init_db():
@@ -224,13 +258,18 @@ def init_db():
             CREATE TABLE IF NOT EXISTS anglers (
                 angler_id INTEGER PRIMARY KEY AUTOINCREMENT,
                 full_name TEXT NOT NULL,
-                username TEXT NOT NULL UNIQUE,     
+                username TEXT NOT NULL UNIQUE,
+                password_hash TEXT,     
                 zip_code TEXT NOT NULL,
                 angler_type TEXT NOT NULL DEFAULT 'Recreational',
                 is_minor TEXT NOT NULL DEFAULT 'N',
                 guardian_angler_id INTEGER
             )
         """)
+        try:
+            conn.execute("ALTER TABLE anglers ADD COLUMN password_hash TEXT")
+        except sqlite3.OperationalError:
+            pass
 
         conn.execute("""
             CREATE TABLE IF NOT EXISTS fishing_licenses (
@@ -242,7 +281,29 @@ def init_db():
                 expiration_date TEXT
             )
         """)
+
+        conn.execute("""
+            CREATE TABLE IF NOT EXISTS fishing_reports (
+                report_id INTEGER PRIMARY KEY AUTOINCREMENT,
+                angler_id INTEGER,
+                generated_at TEXT,
+                species TEXT,
+                latitude REAL,
+                longitude REAL,
+                weather TEXT,
+                temperature REAL,
+                wind_speed REAL,
+                tide_stage TEXT,
+                tide_level REAL,
+                bait_type TEXT,
+                technique TEXT,
+                water_type TEXT,
+                report_score INTEGER
+            )
+        """)
+
         conn.commit()
+
 
 
 def rounded_location_key(lat: float, lon: float) -> str:
@@ -311,6 +372,44 @@ def save_catch(catch_entry: dict):
 def get_catches_df() -> pd.DataFrame:
     with get_db_connection() as conn:
         return pd.read_sql_query("SELECT * FROM catches ORDER BY timestamp DESC", conn)
+
+def get_user_catches_df(angler_id) -> pd.DataFrame:
+    if angler_id is None:
+        return pd.DataFrame()
+
+    with get_db_connection() as conn:
+        return pd.read_sql_query(
+            """
+            SELECT *
+            FROM catches
+            WHERE angler_id = ?
+            ORDER BY timestamp DESC
+            """,
+            conn,
+            params=(angler_id,)
+        )
+
+def get_user_fish_lengths_df(angler_id) -> pd.DataFrame:
+    if angler_id is None:
+        return pd.DataFrame()
+
+    with get_db_connection() as conn:
+        return pd.read_sql_query(
+            """
+            SELECT 
+                cl.length_id,
+                cl.catch_id,
+                cl.fish_length,
+                c.species,
+                c.angler_id,
+                c.timestamp
+            FROM catch_lengths cl
+            LEFT JOIN catches c ON cl.catch_id = c.id
+            WHERE c.angler_id = ?
+            """,
+            conn,
+            params=(angler_id,)
+        )
 
 def get_today_species_total(angler_id, species):
     today = datetime.now().strftime("%Y-%m-%d")
@@ -481,21 +580,31 @@ def clear_all_catches():
         conn.execute("DELETE FROM catches")
         conn.commit()
 
-def save_angler(full_name, username, zip_code, angler_type, is_minor, guardian_angler_id=None):
+def save_angler(full_name, username, password, zip_code, angler_type, is_minor, guardian_angler_id=None):
+    hashed_password = hash_password(password)
+
     with get_db_connection() as conn:
         cur = conn.execute("""
             INSERT INTO anglers 
-            (full_name, username, zip_code, angler_type, is_minor, guardian_angler_id)
-            VALUES (?, ?, ?, ?, ?, ?)
+            (full_name, username, password_hash, zip_code, angler_type, is_minor, guardian_angler_id)
+            VALUES (?, ?, ?, ?, ?, ?, ?) 
+        """, (full_name, username, hashed_password, zip_code, angler_type, is_minor, guardian_angler_id))
 
-        """, (full_name, username, zip_code, angler_type, is_minor, guardian_angler_id))
         conn.commit()
         return cur.lastrowid
 
 
-def get_anglers_df():
-    with get_db_connection() as conn:
-        return pd.read_sql_query("SELECT * FROM anglers ORDER BY full_name", conn)
+def get_anglers_df(username):
+    conn = get_db_connection()
+
+    df = pd.read_sql_query(
+        "SELECT * FROM anglers WHERE username = ?",
+        conn,
+        params=(username,)
+    )
+
+    conn.close()
+    return df
 
 
 def save_license(angler_id, license_number, license_type, is_lifetime, expiration_date):
@@ -641,7 +750,7 @@ def get_live_weather(lat: float, lon: float) -> dict:
         cached["source"] = "cached"
         return cached
 
-    # Last-resort defaults keep the score page usable even with no internet and no cache yet.
+    # Last-resort defaults keep the report page usable even with no internet and no cache yet.
     return {
         "temperature": 72,
         "wind_speed": 8,
@@ -649,6 +758,47 @@ def get_live_weather(lat: float, lon: float) -> dict:
         "source": "offline_default",
     }
 
+# -------------------------------------------------
+# WEATHER FORECASTING
+# -------------------------------------------------
+def fetch_hourly_weather_forecast(lat: float, lon: float) -> pd.DataFrame:
+    url = (
+        "https://api.open-meteo.com/v1/forecast"
+        f"?latitude={lat}&longitude={lon}"
+        f"&hourly=temperature_2m,wind_speed_10m,weather_code"
+        f"&temperature_unit=fahrenheit"
+        f"&wind_speed_unit=mph"
+        f"&forecast_days=1"
+        f"&timezone=auto"
+    )
+
+    response = requests.get(url, timeout=20)
+    response.raise_for_status()
+    data = response.json()["hourly"]
+
+    weather_map = {
+        0: "sunny",
+        1: "mostly_clear",
+        2: "partly_cloudy",
+        3: "cloudy",
+        61: "rainy",
+        63: "rainy",
+        65: "rainy",
+    }
+
+    hourly_df = pd.DataFrame({
+        "datetime": pd.to_datetime(data["time"]),
+        "temperature": data["temperature_2m"],
+        "wind_speed": data["wind_speed_10m"],
+        "weather": [
+            weather_map.get(code, "unknown")
+            for code in data["weather_code"]
+        ]
+    })
+
+    hourly_df["hour"] = hourly_df["datetime"].dt.hour
+
+    return hourly_df
 
 # -------------------------------------------------
 # NOAA TIDE HELPERS
@@ -818,17 +968,26 @@ def get_realtime_tide(lat: float, lon: float) -> dict:
 # GEOCODING
 # -------------------------------------------------
 def geocode_location_name(location_name: str):
-    geolocator = Nominatim(user_agent="nc_fishing_score_app")
-    location = geolocator.geocode(location_name, language="en")
+    try:
+        geolocator = Nominatim(user_agent="nc_fishing_report_app")
+        location = geolocator.geocode(location_name, language="en", timeout=10)
 
-    if location is None:
+        if location is None:
+            return None
+
+        address = location.address.lower()
+
+        if "north carolina" not in address and "nc" not in address:
+            return None
+        
+        return {
+            "latitude": location.latitude,
+            "longitude": location.longitude,
+            "address": location.address,
+        }
+
+    except Exception:
         return None
-
-    return {
-        "latitude": location.latitude,
-        "longitude": location.longitude,
-        "address": location.address,
-    }
 
 
 MONTHS = [
@@ -1155,10 +1314,10 @@ def check_regulations(species, fish_count=None, fish_lengths=None, location_regi
 
 
 # -------------------------------------------------
-# FISHING SCORE
+# FISHING REPORT
 # -------------------------------------------------
 
-def get_fishing_score(
+def get_fishing_report(
     model,
     model_columns,
     lat: float,
@@ -1230,16 +1389,16 @@ def get_fishing_score(
     sample_encoded = sample_encoded.reindex(columns=model_columns, fill_value=0)
 
     prob_success = model.predict_proba(sample_encoded)[0][1]
-    fishing_score = round(prob_success * 100)
+    fishing_report = round(prob_success * 100)
     chance_of_success = round(prob_success * 100)
 
-    if fishing_score < 40:
+    if fishing_report < 40:
         rating = "Poor"
         emoji = "🔴"
-    elif fishing_score < 70:
+    elif fishing_report < 70:
         rating = "Fair"
         emoji = "🟡"
-    elif fishing_score < 85:
+    elif fishing_report < 85:
         rating = "Good"
         emoji = "🟢"
     else:
@@ -1263,10 +1422,10 @@ def get_fishing_score(
     if not explanation:
         explanation_text = "Current conditions are mixed, so fishing success may be less predictable."
     else:
-        explanation_text = "Today's score is stronger because of " + ", ".join(explanation) + "."
+        explanation_text = "Today's report is stronger because of " + ", ".join(explanation) + "."
 
     return {
-        "fishing_score": fishing_score,
+        "fishing_report": fishing_report,
         "chance_of_success": chance_of_success,
         "rating": rating,
         "emoji": emoji,
@@ -1286,6 +1445,147 @@ def get_fishing_score(
         "explanation": explanation_text,
     }
 
+def get_best_times_today(
+    model,
+    model_columns,
+    lat,
+    lon,
+    species,
+    month,
+    bait_type,
+    technique,
+    water_type,
+    user_skill_level,
+):
+    try:
+        hourly_weather = fetch_hourly_weather_forecast(lat, lon)
+    except Exception:
+        hourly_weather = pd.DataFrame()
+
+    live_tide = get_realtime_tide(lat, lon)
+    possible_hours = list(range(5, 21))
+    results = []
+
+    for test_hour in possible_hours:
+        if not hourly_weather.empty and test_hour in hourly_weather["hour"].values:
+            weather_row = hourly_weather[hourly_weather["hour"] == test_hour].iloc[0]
+            temperature = weather_row["temperature"]
+            wind_speed = weather_row["wind_speed"]
+            weather = weather_row["weather"]
+        else:
+            fallback_weather = get_live_weather(lat, lon)
+            temperature = fallback_weather["temperature"]
+            wind_speed = fallback_weather["wind_speed"]
+            weather = fallback_weather["weather"]
+
+        time_of_day = get_time_period(test_hour)
+        temp_bucket = get_temp_bucket(temperature)
+        wind_category = get_wind_category(wind_speed)
+        tide_strength = abs(float(live_tide["tide_level"]))
+        location_region = get_location_region(lat, lon)
+
+        sample = pd.DataFrame([{
+            "user_id": 999,
+            "month": month,
+            "hour": test_hour,
+            "time_of_day": time_of_day,
+            "latitude": lat,
+            "longitude": lon,
+            "location_region": location_region,
+            "species": species,
+            "temperature": temperature,
+            "temp_bucket": temp_bucket,
+            "weather": weather,
+            "wind_speed": wind_speed,
+            "wind_category": wind_category,
+            "tide_level": live_tide["tide_level"],
+            "tide_stage": live_tide["tide_stage"],
+            "tide_strength": tide_strength,
+            "noaa_station_id": live_tide["noaa_station_id"],
+            "bait_type": bait_type,
+            "technique": technique,
+            "water_type": water_type,
+            "user_skill_level": user_skill_level,
+        }])
+
+        sample_encoded = pd.get_dummies(sample)
+        sample_encoded = sample_encoded.reindex(columns=model_columns, fill_value=0)
+
+        prob_success = model.predict_proba(sample_encoded)[0][1]
+        report_score = round(prob_success * 100)
+
+        if report_score < 40:
+            rating = "Poor"
+        elif report_score < 70:
+            rating = "Fair"
+        elif report_score < 85:
+            rating = "Good"
+        else:
+            rating = "Excellent"
+
+        results.append({
+            "Time": datetime.strptime(str(test_hour), "%H").strftime("%I %p").lstrip("0"),
+            "Fishing Report Score": report_score,
+            "Rating": rating,
+            "Temp": round(temperature, 1),
+            "Wind": round(wind_speed, 1),
+            "Weather": str(weather).replace("_", " ").title()
+        })
+
+    return pd.DataFrame(results).sort_values(
+        by="Fishing Report Score",
+        ascending=False
+    )
+
+def save_fishing_report(report):
+    with get_db_connection() as conn:
+        conn.execute("""
+            INSERT INTO fishing_reports (
+                angler_id,
+                generated_at,
+                species,
+                latitude,
+                longitude,
+                weather,
+                temperature,
+                wind_speed,
+                tide_stage,
+                tide_level,
+                bait_type,
+                technique,
+                water_type,
+                report_score
+            )
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        """, (
+            report["angler_id"],
+            report["generated_at"],
+            report["species"],
+            report["latitude"],
+            report["longitude"],
+            report["weather"],
+            report["temperature"],
+            report["wind_speed"],
+            report["tide_stage"],
+            report["tide_level"],
+            report["bait_type"],
+            report["technique"],
+            report["water_type"],
+            report["report_score"],
+        ))
+
+        conn.commit()
+
+def get_fishing_reports_df():
+    with get_db_connection() as conn:
+        return pd.read_sql_query(
+            """
+            SELECT *
+            FROM fishing_reports
+            ORDER BY generated_at DESC
+            """,
+            conn
+        )
 
 # -------------------------------------------------
 # LOAD MODEL + SESSION STATE
@@ -1322,81 +1622,83 @@ if "selected_social_features" not in st.session_state:
         "Friends / Rivals",
         "Species Leaderboards",
         "Hotspot Leaderboard",
-        "Fishing Score Sharing",
+        "Fishing Report Sharing",
         "Titles / Skill Levels",
         "Brag Card",
     ]
 
 
 
-def build_community_leaderboard(user_catch_df):
-    your_total_fish = int(user_catch_df["fish_count"].sum()) if not user_catch_df.empty else 0
-    your_species_logged = int(user_catch_df["species"].nunique()) if not user_catch_df.empty else 0
+def build_community_leaderboard(catch_df):
+    if catch_df.empty:
+        return pd.DataFrame()
+
     lengths_df = get_fish_lengths_df()
-    your_largest_fish = (
-        float(lengths_df["fish_length"].max())
-        if not lengths_df.empty
-        else 0.0
+
+    leaderboard = (
+        catch_df.groupby("username")
+        .agg(
+            **{
+                "Most Fish Caught": ("fish_count", "sum"),
+                "Most Species Logged": ("species", "nunique"),
+                "Locations Logged": ("water_body", "nunique"),
+            }
+        )
+        .reset_index()
+        .rename(columns={"username": "Angler"})
     )
-    your_locations_logged = int(
-        user_catch_df["water_body"].replace("", pd.NA).dropna().nunique()
-    ) if "water_body" in user_catch_df.columns else 0
 
-    community_data = [
-        {
-            "Angler": "BayCaster22",
-            "Most Fish Caught": 18,
-            "Most Species Logged": 4,
-            "Largest Fish": 24.5,
-            "Locations Logged": 3,
-        },
-        {
-            "Angler": "DrumHunterNC",
-            "Most Fish Caught": 12,
-            "Most Species Logged": 3,
-            "Largest Fish": 27.0,
-            "Locations Logged": 2,
-        },
-        {
-            "Angler": "SpeckPro",
-            "Most Fish Caught": 9,
-            "Most Species Logged": 2,
-            "Largest Fish": 21.5,
-            "Locations Logged": 2,
-        },
-        {
-            "Angler": "FlounderFan",
-            "Most Fish Caught": 15,
-            "Most Species Logged": 3,
-            "Largest Fish": 19.0,
-            "Locations Logged": 4,
-        },
-        {
-            "Angler": "You",
-            "Most Fish Caught": your_total_fish,
-            "Most Species Logged": your_species_logged,
-            "Largest Fish": round(your_largest_fish, 1),
-            "Locations Logged": your_locations_logged,
-        },
-    ]
+    largest_lengths = (
+        lengths_df.merge(
+            catch_df[["id", "username"]],
+            left_on="catch_id",
+            right_on="id",
+            how="inner"
+        )
+        .groupby("username")["fish_length"]
+        .max()
+        .reset_index()
+        .rename(columns={
+            "username": "Angler",
+            "fish_length": "Largest Fish"
+        })
+    )
 
-    return pd.DataFrame(community_data)
+    leaderboard = leaderboard.merge(largest_lengths, on="Angler", how="left")
+    leaderboard["Largest Fish"] = leaderboard["Largest Fish"].fillna(0).round(1)
 
+    return leaderboard
+
+def get_display_location(row):
+    if pd.notnull(row.get("water_body")) and str(row.get("water_body")).strip() != "":
+        return row["water_body"]
+
+    if pd.notnull(row.get("resolved_location")) and str(row.get("resolved_location")).strip() != "":
+        return row["resolved_location"]
+
+    if pd.notnull(row.get("latitude")) and pd.notnull(row.get("longitude")):
+        return f"{round(row['latitude'], 2)}, {round(row['longitude'], 2)}"
+
+    return "Unknown Location"
+
+
+def clean_location_name(name):
+    if not name:
+        return ""
+    return name.split(",")[0]
 
 def highlight_user_row(row):
-    if row["Angler"] == "You":
+    current_user = st.session_state.get("username")
+
+    if row["Angler"] == current_user:
         return ["background-color: #d0ebff; font-weight: bold; color: #4682b4"] * len(row)
+
     return [""] * len(row)
 
 
 def add_location_label(df):
     out = df.copy()
-    out["location_label"] = out.apply(
-        lambda row: row["water_body"]
-        if pd.notnull(row.get("water_body")) and str(row.get("water_body")).strip() != ""
-        else f"{row['latitude']}, {row['longitude']}",
-        axis=1,
-    )
+    out["location_label"] = out.apply(get_display_location, axis=1)
     return out
 
 def get_public_area_label(lat, lon):
@@ -1480,10 +1782,35 @@ if page == "Profile":
     ### Set up angler information once for easier catch logging and reporting.
     """)
 
+    # LOGIN WITH PASSWORD FOR EXISTING PROFILES
+    st.subheader("Log In With Existing Profile")
+
+    login_username = st.text_input("Username", key="login_username")
+    login_password = st.text_input("Password", type="password", key="login_password")
+
+    if st.button("Log In"):
+        existing_profile = get_anglers_df(login_username)
+
+        if existing_profile.empty:
+            st.error("No profile found with that username.")
+        else:
+            stored_hash = existing_profile.iloc[0]["password_hash"]
+
+            if stored_hash is None or not check_password(login_password, stored_hash):
+                st.error("Incorrect username or password.")
+            else:
+                st.session_state["username"] = login_username
+                st.session_state["angler_id"] = int(existing_profile.iloc[0]["angler_id"])
+                st.session_state["login_success"] = True
+                st.session_state["current_page"] = "Fishing Report"
+                st.rerun()
+
     with st.form("profile_form"):
         full_name = st.text_input("Full Name")
         username = st.text_input("Username / Display Name")
-        zip_code = st.text_input("ZIP Code of Residence")
+        password = st.text_input("Password", type="password")
+        confirm_password = st.text_input("Confirm Password", type="password")
+        zip_code = st.text_input("ZIP Code of Residence", max_chars=5)
 
         angler_type = st.selectbox(
             "Angler Type",
@@ -1510,13 +1837,18 @@ if page == "Profile":
         submitted_profile = st.form_submit_button("Save Profile")
 
     if submitted_profile:
-        if not full_name or not zip_code or not username:
-            st.error("Full name, username, and ZIP code are required.")
+        if not full_name or not zip_code or not username or not password:
+            st.error("Full name, username, ZIP code, and password are required.")
+        elif not zip_code.isdigit() or len(zip_code) != 5:
+            st.error("ZIP code must be exactly 5 digits.")
+        elif password != confirm_password:
+            st.error("Passwords do not match.")
         else:
             try:
                 angler_id = save_angler(
                     full_name=full_name,
                     username=username,
+                    password=password,
                     zip_code=zip_code,
                     angler_type=angler_type,
                     is_minor="Y" if is_child else "N",
@@ -1532,14 +1864,26 @@ if page == "Profile":
                         expiration_date=str(expiration_date) if expiration_date else None
                     )
 
-                st.success("Profile saved successfully.")
+                st.session_state["username"] = username
+                st.session_state["angler_id"] = angler_id
+
+                st.session_state["login_success"] = True
+                st.session_state["current_page"] = "Fishing Report"
+
                 st.rerun()
 
             except sqlite3.IntegrityError:
                 st.error("That username is already taken. Please choose another username.")
 
     st.subheader("Saved Profiles")
-    anglers_df = get_anglers_df()
+    
+    current_user = st.session_state.get("username")
+
+    if not current_user:
+        st.warning("Please log in to view saved profiles.")
+        st.stop()
+
+    anglers_df = get_anglers_df(current_user)
 
     if anglers_df.empty:
         st.info("No profiles saved yet.")
@@ -1565,17 +1909,18 @@ if page == "Profile":
 
 
 # -------------------------------------------------
-# PAGE 1: FISHING SCORE
+# PAGE 1: FISHING REPORT
 # -------------------------------------------------
-if page == "Fishing Score":
+if page == "Fishing Report":
     st.markdown("""
-    # 🎣 NC Fishing Score
+    # 🎣 NC Fishing Report
     ### Smarter fishing conditions, safer catch logging, and better harvest reporting.
     """)
-    st.write("Get a live fishing score based on current weather and tide conditions.")
+    st.write("Get a real-time fishing report based on current weather and tide conditions.")
     st.caption("You can use your current location, enter a place name, or enter latitude and longitude manually.")
 
-    anglers_df = get_anglers_df()
+    current_user = st.session_state.get("username")
+    anglers_df = get_anglers_df(current_user)
 
     selected_angler_id = None
     selected_angler_name = "Guest"
@@ -1584,9 +1929,9 @@ if page == "Fishing Score":
         angler_options = dict(zip(anglers_df["username"], anglers_df["angler_id"]))
 
         selected_angler_name = st.selectbox(
-            "Who is checking this fishing score?",
+            "Who is checking this fishing report?",
             list(angler_options.keys()),
-            key="score_angler_select"
+            key="report_angler_select"
         )
 
         selected_angler_id = angler_options[selected_angler_name]
@@ -1597,7 +1942,7 @@ if page == "Fishing Score":
     location_mode = st.radio(
         "Location input method",
         ["Use my current location", "Enter a place name", "Enter latitude and longitude manually"],
-        key="score_location_mode"
+        key="report_location_mode"
     )
 
     detected_lat = None
@@ -1616,7 +1961,7 @@ if page == "Fishing Score":
         else:
             st.info("Location not available yet. You can switch to place name or manual entry if needed.")
 
-    with st.form("fishing_score_form"):
+    with st.form("fishing_report_form"):
         species = st.selectbox(
             "Species",
             [
@@ -1627,7 +1972,7 @@ if page == "Fishing Score":
                 "striped_bass",
             ],
             format_func=format_species_name,
-            key="score_species"
+            key="report_species"
         )
 
         striped_bass_area = None
@@ -1651,14 +1996,14 @@ if page == "Fishing Score":
                     "central_southern_management_area": "Central/Southern coastal rivers",
                     "cape_fear_river": "Cape Fear River area",
                 }[x],
-                key="score_striped_bass_area"
+                key="report_striped_bass_area"
             )
 
         if location_mode == "Enter a place name":
             place_name = st.text_input(
                 "Enter a town, beach, inlet, or body of water",
                 value="Wilmington, NC",
-                key="score_place_name"
+                key="report_place_name"
             )
         else:
             place_name = None
@@ -1667,42 +2012,43 @@ if page == "Fishing Score":
 
         with col1:
             if location_mode == "Enter latitude and longitude manually":
-                lat = st.number_input("Latitude", value=34.2257, format="%.4f", key="score_lat")
+                lat = st.number_input("Latitude", value=34.2257, format="%.4f", key="report_lat")
             elif location_mode == "Use my current location" and detected_lat is not None:
                 lat = detected_lat
-                st.text_input("Latitude", value=str(round(lat, 4)), disabled=True, key="score_lat_display")
+                st.text_input("Latitude", value=str(round(lat, 4)), disabled=True, key="report_lat_display")
             else:
                 lat = None
 
-            month_name = st.selectbox(
-                "Month",
-                MONTHS,
-                index=datetime.now().month - 1,
-                key="score_month"
+            selected_date = st.date_input(
+                "Date",
+                value=datetime.now(),
+                key="report_date"
             )
 
-            month = MONTHS.index(month_name) + 1
+            month = selected_date.month
+
+            day_of_week = selected_date.weekday()
 
             bait_type = st.selectbox(
                 "Bait Type",
                 ["live_bait", "cut_bait", "artificial_lure", "shrimp", "mullet", "other"],
                 format_func=lambda x: x.replace("_", " ").title(),
-                key="score_bait_type"
+                key="report_bait_type"
             )
 
             water_type = st.selectbox(
                 "Water Type",
                 ["inshore", "nearshore", "offshore", "pier", "surf", "river", "sound", "unknown"],
                 format_func=lambda x: x.replace("_", " ").title(),
-                key="score_water_type"
+                key="report_water_type"
             )
 
         with col2:
             if location_mode == "Enter latitude and longitude manually":
-                lon = st.number_input("Longitude", value=-77.9447, format="%.4f", key="score_lon")
+                lon = st.number_input("Longitude", value=-77.9447, format="%.4f", key="report_lon")
             elif location_mode == "Use my current location" and detected_lon is not None:
                 lon = detected_lon
-                st.text_input("Longitude", value=str(round(lon, 4)), disabled=True, key="score_lon_display")
+                st.text_input("Longitude", value=str(round(lon, 4)), disabled=True, key="report_lon_display")
             else:
                 lon = None
 
@@ -1717,7 +2063,7 @@ if page == "Fishing Score":
                 time_options,
                 format_func=lambda x: x[0],
                 index=datetime.now().hour,
-                key="score_time"
+                key="report_time"
             )
 
             # Extract hour for model
@@ -1727,17 +2073,17 @@ if page == "Fishing Score":
                 "Technique",
                 ["casting", "bottom_fishing", "trolling", "jigging", "fly_fishing", "other"],
                 format_func=lambda x: x.replace("_", " ").title(),
-                key="score_technique"
+                key="report_technique"
             )
 
             user_skill_level = st.selectbox(
                 "Angler Experience Level",
                 ["beginner", "intermediate", "advanced"],
                 format_func=lambda x: x.title(),
-                key="score_user_skill_level"
+                key="report_user_skill_level"
             )
 
-        submitted = st.form_submit_button("Get Fishing Score")
+        submitted = st.form_submit_button("Get Fishing Report")
 
     if submitted:
         try:
@@ -1756,7 +2102,7 @@ if page == "Fishing Score":
                 st.error("Current location is unavailable. Please allow location access or use another location option.")
                 st.stop()
 
-            result = get_fishing_score(
+            result = get_fishing_report(
                 model=xgb_model,
                 model_columns=model_columns,
                 lat=lat,
@@ -1770,13 +2116,31 @@ if page == "Fishing Score":
                 user_skill_level=user_skill_level,
             )
 
+            save_fishing_report({
+                "angler_id": selected_angler_id,
+                "generated_at": datetime.now().isoformat(),
+                "species": species,
+                "latitude": lat,
+                "longitude": lon,
+                "weather": result["live_weather"]["weather"],
+                "temperature": result["live_weather"]["temperature"],
+                "wind_speed": result["live_weather"]["wind_speed"],
+                "tide_stage": result["live_tide"]["tide_stage"],
+                "tide_level": result["live_tide"]["tide_level"],
+                "bait_type": bait_type,
+                "technique": technique,
+                "water_type": water_type,
+                "report_score": result["fishing_report"],
+            })
+
+
             suggestions = get_condition_suggestions(
                 species=species,
                 selected_angler_id=selected_angler_id,
             )
 
             st.subheader("Fishing Conditions Report")
-            st.markdown(f"## {result['emoji']} {result['fishing_score']}/100")
+            st.markdown(f"## {result['emoji']} {result['fishing_report']}/100")
             st.write(f"**Rating:** {result['rating']}")
             st.write(f"**Chance of Success:** {result['chance_of_success']}%")
             st.write(f"**Species:** {format_species_name(result['species'])}")
@@ -1804,7 +2168,7 @@ if page == "Fishing Score":
                         f"**Season:** {striped_area_rule['season']}\n\n"
                         f"{striped_area_rule['restriction']}"
                     )
-            st.write(f"**Month:** {MONTHS[result['month'] - 1]}")
+            st.write(f"**Date:** {selected_date.strftime('%B %d, %Y')}")
             formatted_time = datetime.strptime(str(result["hour"]), "%H").strftime("%I %p").lstrip("0")
             st.write(f"**Time:** {formatted_time}")
             st.write(f"**Bait Type:** {result['bait_type'].replace('_', ' ').title()}")
@@ -1814,7 +2178,7 @@ if page == "Fishing Score":
             st.write(f"**Location Region:** {result['location_region'].title()}")
 
             if location_mode == "Enter a place name" and detected_address is not None:
-                st.write(f"**Resolved Location:** {clean_display_text(place_name)}")
+                st.write(f"**Resolved Location:** {clean_display_text(detected_address)}")
 
             st.write(f"**Latitude:** {round(lat, 4)}")
             st.write(f"**Longitude:** {round(lon, 4)}")
@@ -1833,8 +2197,37 @@ if page == "Fishing Score":
             st.write(f"**NOAA Station:** {result['live_tide']['noaa_station_id']}")
             st.caption(f"Tide source: {result['live_tide'].get('source', 'unknown')}")
 
-            st.markdown("### 💡 Why This Score?")
+            st.markdown("### 💡 Why This Report?")
             st.info(result["explanation"])
+
+            st.markdown("### 🕒 Best Times Today")
+
+            best_times_df = get_best_times_today(
+                model=xgb_model,
+                model_columns=model_columns,
+                lat=lat,
+                lon=lon,
+                species=species,
+                month=month,
+                bait_type=bait_type,
+                technique=technique,
+                water_type=water_type,
+                user_skill_level=user_skill_level,
+            )
+
+            best_time = best_times_df.iloc[0]
+
+            st.success(
+                f"Best predicted time today: **{best_time['Time']}** "
+                f"with a report score of **{best_time['Fishing Report Score']}/100** "
+                f"({best_time['Rating']})."
+            )
+
+            st.dataframe(
+                best_times_df.head(5),
+                use_container_width=True,
+                hide_index=True
+            )
 
             st.markdown("### 🎯 Personalized Suggestions")
             st.info(suggestions["personal"])
@@ -1843,7 +2236,7 @@ if page == "Fishing Score":
             st.info(suggestions["global"])
             
         except Exception as e:
-            st.error(f"Something went wrong while generating the fishing score: {e}")
+            st.error(f"Something went wrong while generating the fishing report: {e}")
 
 
 # -------------------------------------------------
@@ -1855,7 +2248,8 @@ if page == "Log Catch":
     ### Record catch details, fish lengths, locations, and regulation checks.
     """)
 
-    anglers_df = get_anglers_df()
+    current_user = st.session_state.get("username")
+    anglers_df = get_anglers_df(current_user)
 
     if anglers_df.empty:
         st.warning("Please create an angler profile before logging a catch.")
@@ -2136,13 +2530,20 @@ if page == "My Catch Log":
     ### Review your catch history, statistics, locations, and saved entries.
     """)
 
-    if get_catches_df().empty:
+    current_angler_id = st.session_state.get("angler_id")
+
+    if current_angler_id is None:
+        st.warning("Please log in to view your catch log.")
+        st.stop()
+
+    catch_df = get_user_catches_df(current_angler_id)
+
+    if catch_df.empty:
         st.info("No catches logged yet.")
     else:
-        catch_df = get_catches_df()
-
         catch_df["location_label"] = catch_df.apply(
-            lambda row: row["water_body"] if pd.notnull(row.get("water_body")) and str(row.get("water_body")).strip() != ""
+            lambda row: row["water_body"]
+            if pd.notnull(row.get("water_body")) and str(row.get("water_body")).strip() != ""
             else f"{row['latitude']}, {row['longitude']}",
             axis=1
         )
@@ -2150,7 +2551,7 @@ if page == "My Catch Log":
         with st.expander("📊 Catch Statistics", expanded=True):
             total_logs = len(catch_df)
             total_fish = catch_df["fish_count"].sum()
-            lengths_df = get_fish_lengths_df()
+            lengths_df = get_user_fish_lengths_df(current_angler_id)
 
             avg_length = (
                 lengths_df["fish_length"].mean()
@@ -2340,16 +2741,23 @@ if page == "Challenges":
     ### Track progress, earn milestones, and stay motivated to log catches.
     """)
 
-    if get_catches_df().empty:
+    current_angler_id = st.session_state.get("angler_id")
+
+    if current_angler_id is None:
+        st.warning("Please log in to view your challenges.")
+        st.stop()
+
+    catch_df = get_user_catches_df(current_angler_id)
+
+    if catch_df.empty:
         st.info("Log some catches first to see challenge progress.")
     else:
-        catch_df = get_catches_df()
 
         total_fish_caught = catch_df["fish_count"].sum()
         unique_species_caught = catch_df["species"].nunique()
         unique_locations = catch_df["water_body"].replace("", pd.NA).dropna().nunique()
         unique_techniques = catch_df["technique"].dropna().nunique()
-        lengths_df = get_fish_lengths_df()
+        lengths_df = get_user_fish_lengths_df(current_angler_id)
 
         largest_fish = (
             lengths_df["fish_length"].max()
@@ -2539,6 +2947,9 @@ if page == "Community":
         )
 
         catch_df = catch_df[catch_df["angler_type"] == division]
+        if catch_df.empty:
+            st.info(f"No {division.lower()} catches logged yet.")
+            st.stop()
         catch_df = add_location_label(catch_df)
 
         catch_df["timestamp"] = pd.to_datetime(catch_df["timestamp"], errors="coerce")
@@ -2573,7 +2984,7 @@ if page == "Community":
             "Friends / Rivals",
             "Species Leaderboards",
             "Hotspot Leaderboard",
-            "Fishing Score Sharing",
+            "Fishing Report Sharing",
             "Titles / Skill Levels",
             "Brag Card",
         ]
@@ -2606,12 +3017,50 @@ if page == "Community":
                 else 0
             )
 
-            weekly_leaderboard = pd.DataFrame([
-                {"Angler": "BayCaster22", "Most Fish Caught": 7, "Most Species Logged": 2, "Largest Fish": 21.0},
-                {"Angler": "DrumHunterNC", "Most Fish Caught": 5, "Most Species Logged": 2, "Largest Fish": 24.0},
-                {"Angler": "SpeckPro", "Most Fish Caught": 4, "Most Species Logged": 1, "Largest Fish": 18.0},
-                {"Angler": "You", "Most Fish Caught": weekly_total_fish, "Most Species Logged": weekly_species, "Largest Fish": round(weekly_largest, 1)},
-            ])
+            if weekly_df.empty:
+                weekly_leaderboard = pd.DataFrame()
+            else:
+                lengths_df = get_fish_lengths_df()
+
+                # Basic weekly stats
+                weekly_leaderboard = (
+                    weekly_df.groupby("username")
+                    .agg(
+                        **{
+                            "Most Fish Caught": ("fish_count", "sum"),
+                            "Most Species Logged": ("species", "nunique"),
+                        }
+                    )
+                    .reset_index()
+                    .rename(columns={"username": "Angler"})
+                ) 
+
+                # Largest fish per user (weekly)
+                weekly_lengths = lengths_df.merge(
+                    weekly_df[["id", "username"]],
+                    left_on="catch_id",
+                    right_on="id",
+                    how="inner"
+                )
+
+                largest_weekly = (
+                    weekly_lengths.groupby("username")["fish_length"]
+                    .max()
+                    .reset_index()
+                    .rename(columns={
+                        "username": "Angler",
+                        "fish_length": "Largest Fish"
+                    })
+                )
+
+                weekly_leaderboard = weekly_leaderboard.merge(
+                    largest_weekly,
+                    on="Angler",
+                    how="left"
+                )
+
+                weekly_leaderboard["Largest Fish"] = weekly_leaderboard["Largest Fish"].fillna(0).round(1)
+
 
             weekly_metric = st.selectbox(
                 "Weekly leaderboard category",
@@ -2624,10 +3073,12 @@ if page == "Community":
                 ascending=False
             ).reset_index(drop=True)
 
+            badges = ["🥇", "🥈", "🥉"]
+
             weekly_sorted.insert(
                 0,
                 "Badge",
-                ["🥇", "🥈", "🥉"] + [""] * max(0, len(weekly_sorted) - 3)
+                [badges[i] if i < len(badges) else "" for i in range(len(weekly_sorted))]
             )
             weekly_sorted.index = weekly_sorted.index + 1
             weekly_sorted.index.name = "Rank"
@@ -2678,12 +3129,39 @@ if page == "Community":
                 else 0.0
             )
 
-            species_leaderboard = pd.DataFrame([
-                {"Angler": "BayCaster22", "Fish Caught": 5, "Largest Fish": 20.0},
-                {"Angler": "DrumHunterNC", "Fish Caught": 4, "Largest Fish": 24.0},
-                {"Angler": "SpeckPro", "Fish Caught": 3, "Largest Fish": 18.0},
-                {"Angler": "You", "Fish Caught": species_total, "Largest Fish": round(species_largest, 1)},
-            ])
+            species_leaderboard = (
+                species_df.groupby("username")["fish_count"]
+                .sum()
+                .reset_index()
+                .rename(columns={
+                    "username": "Angler",
+                    "fish_count": "Fish Caught"
+                })
+            )
+
+            species_largest_by_user = (
+                species_lengths_df.merge(
+                    species_df[["id", "username"]],
+                    left_on="catch_id",
+                    right_on="id",
+                    how="inner"
+                )
+                .groupby("username")["fish_length"]
+                .max()
+                .reset_index()
+                .rename(columns={
+                    "username": "Angler",
+                    "fish_length": "Largest Fish"
+                })
+            )
+
+            species_leaderboard = species_leaderboard.merge(
+                species_largest_by_user,
+                on="Angler",
+                how="left"
+            )
+
+            species_leaderboard["Largest Fish"] = species_leaderboard["Largest Fish"].fillna(0).round(1)
 
             species_metric = st.selectbox(
                 "Species leaderboard category",
@@ -2696,10 +3174,12 @@ if page == "Community":
                 ascending=False
             ).reset_index(drop=True)
 
+            badges = ["🥇", "🥈", "🥉"]
+
             species_sorted.insert(
                 0,
                 "Badge",
-                ["🥇", "🥈", "🥉"] + [""] * max(0, len(species_sorted) - 3)
+                [badges[i] if i < len(badges) else "" for i in range(len(species_sorted))]
             )
             species_sorted.index = species_sorted.index + 1
             species_sorted.index.name = "Rank"
@@ -2710,23 +3190,71 @@ if page == "Community":
         # 6. Hotspot Leaderboard
         if "Hotspot Leaderboard" in selected_social_features:
             st.subheader("📍 Hotspot Leaderboard")
-            catch_df = add_public_area_label(catch_df)
+
+            hotspot_source = catch_df.copy()
+
+            hotspot_source["location_name"] = hotspot_source.apply(get_display_location, axis=1)
+            hotspot_source["location_name"] = hotspot_source["location_name"].apply(clean_location_name)
+
             hotspot_df = (
-                catch_df.groupby("public_area", as_index=False)["fish_count"]
+                hotspot_source.groupby("location_name", as_index=False)["fish_count"]
                 .sum()
                 .sort_values(by="fish_count", ascending=False)
                 .head(5)
                 .rename(columns={
-                    "public_area": "General Area",
+                    "location_name": "Location",
                     "fish_count": "Total Fish Caught"
                 })
             )
+
             st.dataframe(hotspot_df, use_container_width=True)
 
-        # 7. Fishing Conditions Score Sharing
-        if "Fishing Score Sharing" in selected_social_features:
+        # 7. Fishing Conditions Report Sharing
+        if "Fishing Report Sharing" in selected_social_features:
             st.subheader("🌊 Best Fishing Conditions")
-            st.info("A future version can compare logged fishing scores across trips. For now, this can be mocked or tied to saved score snapshots.")
+            
+            reports_df = get_fishing_reports_df()
+
+            if reports_df.empty:
+                st.info("Not enough fishing reports have been generated yet.")
+            else:
+                weather_summary = (
+                    reports_df.groupby("weather")["report_score"]
+                    .mean()
+                    .sort_values(ascending=False)
+                    .reset_index()
+                )
+
+                weather_summary.columns = [
+                    "Weather Condition",
+                    "Average Report Score"
+                ]
+
+                weather_summary["Weather Condition"] = (
+                    weather_summary["Weather Condition"]
+                    .str.replace("_", " ")
+                    .str.title()
+                )
+                
+                weather_summary["Average Report Score"] = (
+                    weather_summary["Average Report Score"]
+                    .round(1)
+                )
+
+                best_weather = weather_summary.iloc[0]
+
+                st.success(
+                    f"Best average conditions so far: "
+                    f"**{best_weather['Weather Condition']}** "
+                    f"with an average report score of "
+                    f"**{best_weather['Average Report Score']}**."
+                )
+
+                st.dataframe(
+                    weather_summary,
+                    use_container_width=True,
+                    hide_index=True
+                )
 
         # 8. Titles / Skill Levels
         if "Titles / Skill Levels" in selected_social_features:
@@ -2771,10 +3299,17 @@ if page == "Map":
     ### Explore logged catches by species and general fishing areas.
     """)
 
-    if get_catches_df().empty:
+    current_angler_id = st.session_state.get("angler_id")
+
+    if current_angler_id is None:
+        st.warning("Please log in to view your catch map.")
+        st.stop()
+
+    catch_df = get_user_catches_df(current_angler_id)
+
+    if catch_df.empty:
         st.info("Log some catches first to see them on the map.")
     else:
-        catch_df = get_catches_df()
 
         # make sure coordinates are numeric
         catch_df["latitude"] = pd.to_numeric(catch_df["latitude"], errors="coerce")
