@@ -967,18 +967,249 @@ def get_realtime_tide(lat: float, lon: float) -> dict:
 # -------------------------------------------------
 # GEOCODING
 # -------------------------------------------------
+KNOWN_NC_LOCATIONS = {
+    # =========================================================
+    # BRUNSWICK / LOWER CAPE FEAR
+    # =========================================================
+    "southport": (33.9216, -78.0208, "Southport, NC"),
+    "southport nc": (33.9216, -78.0208, "Southport, NC"),
+    "oak island": (33.9160, -78.1617, "Oak Island, NC"),
+    "oak island nc": (33.9160, -78.1617, "Oak Island, NC"),
+    "caswell beach": (33.9018, -78.0453, "Caswell Beach, NC"),
+    "caswell beach nc": (33.9018, -78.0453, "Caswell Beach, NC"),
+    "bald head island": (33.8632, -77.9950, "Bald Head Island, NC"),
+    "bald head island nc": (33.8632, -77.9950, "Bald Head Island, NC"),
+    "holden beach": (33.9135, -78.3039, "Holden Beach, NC"),
+    "holden beach nc": (33.9135, -78.3039, "Holden Beach, NC"),
+    "ocean isle beach": (33.8949, -78.4267, "Ocean Isle Beach, NC"),
+    "ocean isle beach nc": (33.8949, -78.4267, "Ocean Isle Beach, NC"),
+    "sunset beach": (33.8807, -78.5122, "Sunset Beach, NC"),
+    "sunset beach nc": (33.8807, -78.5122, "Sunset Beach, NC"),
+    "shallotte": (33.9732, -78.3858, "Shallotte, NC"),
+    "shallotte nc": (33.9732, -78.3858, "Shallotte, NC"),
+    "calabash": (33.8907, -78.5686, "Calabash, NC"),
+    "calabash nc": (33.8907, -78.5686, "Calabash, NC"),
+
+    # =========================================================
+    # WILMINGTON / NEW HANOVER
+    # =========================================================
+    "wilmington": (34.2104, -77.8868, "Wilmington, NC"),
+    "wilmington nc": (34.2104, -77.8868, "Wilmington, NC"),
+    "wrightsville beach": (34.2085, -77.7964, "Wrightsville Beach, NC"),
+    "wrightsville beach nc": (34.2085, -77.7964, "Wrightsville Beach, NC"),
+    "carolina beach": (34.0352, -77.8936, "Carolina Beach, NC"),
+    "carolina beach nc": (34.0352, -77.8936, "Carolina Beach, NC"),
+    "kure beach": (33.9968, -77.9105, "Kure Beach, NC"),
+    "kure beach nc": (33.9968, -77.9105, "Kure Beach, NC"),
+    "masonboro island": (34.1180, -77.8470, "Masonboro Island, NC"),
+    "masonboro inlet": (34.1707, -77.8222, "Masonboro Inlet, NC"),
+    "snows cut": (34.0480, -77.9070, "Snows Cut, NC"),
+    "cape fear river": (34.2270, -77.9530, "Cape Fear River, NC"),
+
+    # =========================================================
+    # PENDER / TOPSAIL AREA
+    # =========================================================
+    "topsail beach": (34.3657, -77.6305, "Topsail Beach, NC"),
+    "topsail beach nc": (34.3657, -77.6305, "Topsail Beach, NC"),
+    "surf city": (34.4271, -77.5461, "Surf City, NC"),
+    "surf city nc": (34.4271, -77.5461, "Surf City, NC"),
+    "north topsail beach": (34.4813, -77.4313, "North Topsail Beach, NC"),
+    "north topsail beach nc": (34.4813, -77.4313, "North Topsail Beach, NC"),
+    "topsail island": (34.4300, -77.5400, "Topsail Island, NC"),
+    "topsail sound": (34.3900, -77.5700, "Topsail Sound, NC"),
+    "new topsail inlet": (34.3260, -77.6630, "New Topsail Inlet, NC"),
+
+    # =========================================================
+    # ONSLOW / JACKSONVILLE / NEW RIVER
+    # =========================================================
+    "jacksonville": (34.7541, -77.4302, "Jacksonville, NC"),
+    "jacksonville nc": (34.7541, -77.4302, "Jacksonville, NC"),
+    "swansboro": (34.6938, -77.1233, "Swansboro, NC"),
+    "swansboro nc": (34.6938, -77.1233, "Swansboro, NC"),
+    "sneads ferry": (34.5527, -77.3972, "Sneads Ferry, NC"),
+    "sneads ferry nc": (34.5527, -77.3972, "Sneads Ferry, NC"),
+    "richlands": (34.8993, -77.5461, "Richlands, NC"),
+    "richlands nc": (34.8993, -77.5461, "Richlands, NC"),
+    "bear island": (34.6267, -77.1067, "Bear Island, NC"),
+    "bear inlet": (34.6100, -77.0900, "Bear Inlet, NC"),
+    "new river": (34.7000, -77.4000, "New River, NC"),
+    "new river inlet": (34.5330, -77.3400, "New River Inlet, NC"),
+    "onslow beach": (34.4632, -77.3219, "Onslow Beach, NC"),
+    "white oak river": (34.7300, -77.1200, "White Oak River, NC"),
+
+    # =========================================================
+    # CARTERET / CRYSTAL COAST
+    # =========================================================
+    "morehead city": (34.7229, -76.7260, "Morehead City, NC"),
+    "morehead city nc": (34.7229, -76.7260, "Morehead City, NC"),
+    "atlantic beach": (34.6991, -76.7402, "Atlantic Beach, NC"),
+    "atlantic beach nc": (34.6991, -76.7402, "Atlantic Beach, NC"),
+    "beaufort": (34.7182, -76.6638, "Beaufort, NC"),
+    "beaufort nc": (34.7182, -76.6638, "Beaufort, NC"),
+    "emerald isle": (34.6779, -76.9508, "Emerald Isle, NC"),
+    "emerald isle nc": (34.6779, -76.9508, "Emerald Isle, NC"),
+    "pine knoll shores": (34.6974, -76.8130, "Pine Knoll Shores, NC"),
+    "pine knoll shores nc": (34.6974, -76.8130, "Pine Knoll Shores, NC"),
+    "harkers island": (34.6952, -76.5552, "Harkers Island, NC"),
+    "harkers island nc": (34.6952, -76.5552, "Harkers Island, NC"),
+    "marshallberg": (34.7204, -76.5149, "Marshallberg, NC"),
+    "marshallberg nc": (34.7204, -76.5149, "Marshallberg, NC"),
+    "cape lookout": (34.6221, -76.5291, "Cape Lookout, NC"),
+    "fort macon": (34.6977, -76.6824, "Fort Macon, NC"),
+    "radio island": (34.7210, -76.6700, "Radio Island, NC"),
+    "bogue inlet": (34.6580, -77.0400, "Bogue Inlet, NC"),
+    "beaufort inlet": (34.6880, -76.6700, "Beaufort Inlet, NC"),
+    "bogue sound": (34.7000, -76.8500, "Bogue Sound, NC"),
+    "core sound": (34.8500, -76.4500, "Core Sound, NC"),
+    "newport river": (34.7400, -76.7000, "Newport River, NC"),
+
+    # =========================================================
+    # CRAVEN / PAMLICO / NEUSE REGION
+    # =========================================================
+    "new bern": (35.1085, -77.0441, "New Bern, NC"),
+    "new bern nc": (35.1085, -77.0441, "New Bern, NC"),
+    "havelock": (34.8791, -76.9013, "Havelock, NC"),
+    "havelock nc": (34.8791, -76.9013, "Havelock, NC"),
+    "oriental": (35.0310, -76.6924, "Oriental, NC"),
+    "oriental nc": (35.0310, -76.6924, "Oriental, NC"),
+    "bayboro": (35.1424, -76.7705, "Bayboro, NC"),
+    "bayboro nc": (35.1424, -76.7705, "Bayboro, NC"),
+    "vandemere": (35.1849, -76.6630, "Vandemere, NC"),
+    "vandemere nc": (35.1849, -76.6630, "Vandemere, NC"),
+    "neuse river": (35.1085, -77.0441, "Neuse River, NC"),
+    "lower neuse river": (34.9800, -76.7600, "Lower Neuse River, NC"),
+    "trent river": (35.1000, -77.0600, "Trent River, NC"),
+    "pamlico river": (35.5400, -77.0500, "Pamlico River, NC"),
+    "goose creek": (35.4300, -76.8000, "Goose Creek, NC"),
+
+    # =========================================================
+    # BEAUFORT COUNTY / PAMLICO RIVER
+    # =========================================================
+    "washington": (35.5466, -77.0522, "Washington, NC"),
+    "washington nc": (35.5466, -77.0522, "Washington, NC"),
+    "little washington": (35.5466, -77.0522, "Washington, NC"),
+    "bath": (35.4760, -76.8105, "Bath, NC"),
+    "bath nc": (35.4760, -76.8105, "Bath, NC"),
+    "belhaven": (35.5404, -76.6238, "Belhaven, NC"),
+    "belhaven nc": (35.5404, -76.6238, "Belhaven, NC"),
+    "pantego": (35.5893, -76.6627, "Pantego, NC"),
+    "pantego nc": (35.5893, -76.6627, "Pantego, NC"),
+    "chocowinity": (35.5127, -77.1000, "Chocowinity, NC"),
+    "chocowinity nc": (35.5127, -77.1000, "Chocowinity, NC"),
+
+    # =========================================================
+    # PITT / GREENVILLE / TAR RIVER AREA
+    # =========================================================
+    "greenville": (35.6127, -77.3664, "Greenville, NC"),
+    "greenville nc": (35.6127, -77.3664, "Greenville, NC"),
+    "grimesland": (35.5638, -77.1930, "Grimesland, NC"),
+    "grimesland nc": (35.5638, -77.1930, "Grimesland, NC"),
+    "tar river": (35.6500, -77.3500, "Tar River, NC"),
+
+    # =========================================================
+    # ALBEMARLE / NORTHEASTERN NC
+    # =========================================================
+    "chowan river": (36.1000, -76.7000, "Chowan River, NC"),
+    "chowan river nc": (36.1000, -76.7000, "Chowan River, NC"),
+    "murfreesboro": (36.4421, -77.0986, "Murfreesboro, NC"),
+    "murfreesboro nc": (36.4421, -77.0986, "Murfreesboro, NC"),
+    "winton": (36.3957, -76.9327, "Winton, NC"),
+    "winton nc": (36.3957, -76.9327, "Winton, NC"),
+    "colerain": (36.1963, -76.7691, "Colerain, NC"),
+    "colerain nc": (36.1963, -76.7691, "Colerain, NC"),
+    "elizabeth city": (36.2946, -76.2510, "Elizabeth City, NC"),
+    "elizabeth city nc": (36.2946, -76.2510, "Elizabeth City, NC"),
+    "edenton": (36.0579, -76.6077, "Edenton, NC"),
+    "edenton nc": (36.0579, -76.6077, "Edenton, NC"),
+    "plymouth": (35.8668, -76.7486, "Plymouth, NC"),
+    "plymouth nc": (35.8668, -76.7486, "Plymouth, NC"),
+    "columbia": (35.9191, -76.2527, "Columbia, NC"),
+    "columbia nc": (35.9191, -76.2527, "Columbia, NC"),
+    "manteo": (35.9082, -75.6757, "Manteo, NC"),
+    "manteo nc": (35.9082, -75.6757, "Manteo, NC"),
+    "roanoke island": (35.9000, -75.6600, "Roanoke Island, NC"),
+    "roanoke river": (35.9500, -76.7000, "Roanoke River, NC"),
+    "perquimans river": (36.1800, -76.4200, "Perquimans River, NC"),
+    "pasquotank river": (36.3000, -76.2200, "Pasquotank River, NC"),
+    "meherrin river": (36.4500, -77.0000, "Meherrin River, NC"),
+    "cashie river": (36.0200, -76.9400, "Cashie River, NC"),
+    "blackwater river": (36.6500, -76.9000, "Blackwater River, NC"),
+
+    # =========================================================
+    # OUTER BANKS
+    # =========================================================
+    "outer banks": (35.5585, -75.4660, "Outer Banks, NC"),
+    "obx": (35.5585, -75.4660, "Outer Banks, NC"),
+    "nags head": (35.9574, -75.6241, "Nags Head, NC"),
+    "nags head nc": (35.9574, -75.6241, "Nags Head, NC"),
+    "kitty hawk": (36.0646, -75.7057, "Kitty Hawk, NC"),
+    "kitty hawk nc": (36.0646, -75.7057, "Kitty Hawk, NC"),
+    "kill devil hills": (36.0307, -75.6760, "Kill Devil Hills, NC"),
+    "kill devil hills nc": (36.0307, -75.6760, "Kill Devil Hills, NC"),
+    "duck": (36.1696, -75.7524, "Duck, NC"),
+    "duck nc": (36.1696, -75.7524, "Duck, NC"),
+    "corolla": (36.3765, -75.8307, "Corolla, NC"),
+    "corolla nc": (36.3765, -75.8307, "Corolla, NC"),
+    "oregon inlet": (35.7950, -75.5480, "Oregon Inlet, NC"),
+    "oregon inlet nc": (35.7950, -75.5480, "Oregon Inlet, NC"),
+    "rodanthe": (35.5946, -75.4660, "Rodanthe, NC"),
+    "rodanthe nc": (35.5946, -75.4660, "Rodanthe, NC"),
+    "avon": (35.3516, -75.5105, "Avon, NC"),
+    "avon nc": (35.3516, -75.5105, "Avon, NC"),
+    "buxton": (35.2679, -75.5424, "Buxton, NC"),
+    "buxton nc": (35.2679, -75.5424, "Buxton, NC"),
+    "cape hatteras": (35.2510, -75.5280, "Cape Hatteras, NC"),
+    "hatteras": (35.2199, -75.6905, "Hatteras, NC"),
+    "hatteras nc": (35.2199, -75.6905, "Hatteras, NC"),
+    "ocracoke": (35.1146, -75.9813, "Ocracoke, NC"),
+    "ocracoke nc": (35.1146, -75.9813, "Ocracoke, NC"),
+    "ocracoke inlet": (35.0677, -76.0240, "Ocracoke Inlet, NC"),
+    "hatteras inlet": (35.2010, -75.7500, "Hatteras Inlet, NC"),
+
+    # =========================================================
+    # SOUNDS / LARGE WATER BODIES / REFUGES
+    # =========================================================
+    "pamlico sound": (35.3000, -76.2000, "Pamlico Sound, NC"),
+    "albemarle sound": (36.0600, -76.0000, "Albemarle Sound, NC"),
+    "currituck sound": (36.4000, -75.9000, "Currituck Sound, NC"),
+    "croatan sound": (35.8800, -75.7200, "Croatan Sound, NC"),
+    "roanoke sound": (35.8800, -75.6500, "Roanoke Sound, NC"),
+    "alligator river": (35.9000, -75.9500, "Alligator River, NC"),
+    "alligator river refuge": (35.9000, -75.9500, "Alligator River Refuge, NC"),
+    "pocosin lakes": (35.7500, -76.4000, "Pocosin Lakes, NC"),
+    "lake mattamuskeet": (35.5100, -76.1800, "Lake Mattamuskeet, NC"),
+    "phelps lake": (35.7300, -76.5600, "Phelps Lake, NC"),
+}
+
+def normalize_location_query(location_name):
+    return (
+        str(location_name)
+        .strip()
+        .lower()
+        .replace(",", "")
+        .replace("north carolina", "nc")
+    )
+
 def geocode_location_name(location_name: str):
     try:
         if location_name is None or str(location_name).strip() == "":
             return None
 
         query = str(location_name).strip()
+        normalized_query = normalize_location_query(query)
 
-        # Add NC only if the user did not already include it
+        if normalized_query in KNOWN_NC_LOCATIONS:
+            lat, lon, address = KNOWN_NC_LOCATIONS[normalized_query]
+            return {
+                "latitude": lat,
+                "longitude": lon,
+                "address": address,
+            }
+
         if "nc" not in query.lower() and "north carolina" not in query.lower():
             query = f"{query}, NC"
 
-        geolocator = Nominatim(user_agent="count_my_fish_app")
+        geolocator = Nominatim(user_agent="count_my_fish_app_rebecca")
 
         location = geolocator.geocode(
             query,
@@ -997,7 +1228,7 @@ def geocode_location_name(location_name: str):
         }
 
     except Exception as e:
-        st.error(f"Geocoder error: {e}")
+        st.warning("The live location search is temporarily busy. Try a common NC location, or enter latitude and longitude manually.")
         return None
 
 
