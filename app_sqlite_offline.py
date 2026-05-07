@@ -996,7 +996,8 @@ def geocode_location_name(location_name: str):
             "address": location.address,
         }
 
-    except Exception:
+    except Exception as e:
+        st.error(f"Geocoder error: {e}")
         return None
 
 
