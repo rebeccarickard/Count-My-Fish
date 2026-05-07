@@ -974,38 +974,29 @@ def geocode_location_name(location_name: str):
 
         query = str(location_name).strip()
 
-        # If the user did not include NC or North Carolina, add it automatically
+        # Add NC only if the user did not already include it
         if "nc" not in query.lower() and "north carolina" not in query.lower():
-            query = f"{query}, North Carolina"
+            query = f"{query}, NC"
 
-        geolocator = Nominatim(user_agent="count_my_fish_nc_app")
+        geolocator = Nominatim(user_agent="count_my_fish_app")
 
         location = geolocator.geocode(
             query,
             language="en",
             timeout=10,
-            country_codes="us",
             exactly_one=True
         )
 
         if location is None:
             return None
 
-        lat = float(location.latitude)
-        lon = float(location.longitude)
-
-        # Keep results roughly inside North Carolina
-        if not (33.5 <= lat <= 36.7 and -84.5 <= lon <= -75.0):
-            return None
-
         return {
-            "latitude": lat,
-            "longitude": lon,
+            "latitude": float(location.latitude),
+            "longitude": float(location.longitude),
             "address": location.address,
         }
 
-    except Exception as e:
-        st.warning(f"Location lookup error: {e}")
+    except Exception:
         return None
 
 
