@@ -969,24 +969,43 @@ def get_realtime_tide(lat: float, lon: float) -> dict:
 # -------------------------------------------------
 def geocode_location_name(location_name: str):
     try:
-        geolocator = Nominatim(user_agent="nc_fishing_report_app")
-        location = geolocator.geocode(location_name, language="en", timeout=10)
+        if location_name is None or str(location_name).strip() == "":
+            return None
+
+        query = str(location_name).strip()
+
+        # If the user did not include NC or North Carolina, add it automatically
+        if "nc" not in query.lower() and "north carolina" not in query.lower():
+            query = f"{query}, North Carolina"
+
+        geolocator = Nominatim(user_agent="count_my_fish_nc_app")
+
+        location = geolocator.geocode(
+            query,
+            language="en",
+            timeout=10,
+            country_codes="us",
+            exactly_one=True
+        )
 
         if location is None:
             return None
 
-        address = location.address.lower()
+        lat = float(location.latitude)
+        lon = float(location.longitude)
 
-        if "north carolina" not in address and "nc" not in address:
+        # Keep results roughly inside North Carolina
+        if not (33.5 <= lat <= 36.7 and -84.5 <= lon <= -75.0):
             return None
-        
+
         return {
-            "latitude": location.latitude,
-            "longitude": location.longitude,
+            "latitude": lat,
+            "longitude": lon,
             "address": location.address,
         }
 
-    except Exception:
+    except Exception as e:
+        st.warning(f"Location lookup error: {e}")
         return None
 
 
@@ -2091,7 +2110,7 @@ if page == "Fishing Report":
                 geocode_result = geocode_location_name(place_name)
 
                 if geocode_result is None:
-                    st.error("Could not find that location. Try a more specific place name.")
+                    st.error("Could not find that location in North Carolina. Try adding NC, a nearby town, or a more specific place name.")
                     st.stop()
 
                 lat = geocode_result["latitude"]
@@ -2372,7 +2391,7 @@ if page == "Log Catch":
             geocode_result = geocode_location_name(water_body)
 
             if geocode_result is None:
-                st.error("Could not find that location. Try a more specific place name.")
+                st.error("Could not find that location in North Carolina. Try adding NC, a nearby town, or a more specific place name.")
                 st.stop()
 
             lat = geocode_result["latitude"]
