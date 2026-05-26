@@ -737,6 +737,44 @@ def fetch_live_weather_from_api(lat: float, lon: float) -> dict:
     raise last_error
 
 
+def fetch_weather_from_nws_api(lat: float, lon: float) -> dict:
+    headers = {
+        "User-Agent": "CountMyFishApp (rebeccalrickard2@gmail.com)",
+        "Accept": "application/geo+json",
+    }
+
+    points_url = f"https://api.weather.gov/points/{lat},{lon}"
+
+    points_response = requests.get(points_url, headers=headers, timeout=20)
+    points_response.raise_for_status()
+
+    points_data = points_response.json()
+    forecast_hourly_url = points_data["properties"]["forecastHourly"]
+
+    forecast_response = requests.get(forecast_hourly_url, headers=headers, timeout=20)
+    forecast_response.raise_for_status()
+
+    period = forecast_response.json()["properties"]["periods"][0]
+
+    short_forecast = str(period.get("shortForecast", "")).lower()
+
+    if "rain" in short_forecast or "shower" in short_forecast:
+        weather = "rainy"
+    elif "cloud" in short_forecast:
+        weather = "cloudy"
+    elif "sun" in short_forecast or "clear" in short_forecast:
+        weather = "sunny"
+    else:
+        weather = "unknown"
+
+    return {
+        "temperature": period["temperature"],
+        "wind_speed": float(str(period["windSpeed"]).split()[0]),
+        "weather": weather,
+        "source": "live_nws",
+    }
+
+
 def get_live_weather(lat: float, lon: float) -> dict:
     cached = get_cached_weather(lat, lon)
 
@@ -746,8 +784,14 @@ def get_live_weather(lat: float, lon: float) -> dict:
             save_cached_weather(lat, lon, live_weather)
             return live_weather
 
-        except Exception as e:
-            st.warning(f"Live weather unavailable: {e}")
+        except Exception:
+            try:
+                nws_weather = fetch_weather_from_nws_api(lat, lon)
+                save_cached_weather(lat, lon, nws_weather)
+                return nws_weather
+            
+            except Exception as e:
+                st.warning("Live weather is temporarily unavailable, so the app is using cached or default conditions.")
 
     if cached is not None:
         cached["source"] = "cached"
