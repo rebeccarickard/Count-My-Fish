@@ -13,6 +13,7 @@ import plotly.express as px
 import base64
 import hashlib
 import time
+from zoneinfo import ZoneInfo
 
 def get_base64_image(image_path):
     with open(image_path, "rb") as img_file:
@@ -196,6 +197,8 @@ def hash_password(password):
 def check_password(password, password_hash):
     return hash_password(password) == password_hash
 
+def get_local_time():
+    return datetime.now(ZoneInfo("America/New_York"))
 
 def init_db():
     with get_db_connection() as conn:
@@ -314,7 +317,7 @@ def rounded_location_key(lat: float, lon: float) -> str:
 def is_cache_fresh(cached_at: str, max_age_minutes: int = CACHE_MAX_AGE_MINUTES) -> bool:
     try:
         cached_time = datetime.fromisoformat(cached_at)
-        return datetime.now() - cached_time <= timedelta(minutes=max_age_minutes)
+        return get_local_time() - cached_time <= timedelta(minutes=max_age_minutes)
     except Exception:
         return False
 
@@ -404,7 +407,7 @@ def get_user_fish_lengths_df(angler_id) -> pd.DataFrame:
         )
 
 def get_today_species_total(angler_id, species):
-    today = datetime.now().strftime("%Y-%m-%d")
+    today = get_local_time().strftime("%Y-%m-%d")
 
     with get_db_connection() as conn:
         row = conn.execute(
@@ -641,7 +644,7 @@ def save_cached_weather(lat: float, lon: float, weather_data: dict):
             """,
             (
                 cache_key,
-                datetime.now().isoformat(timespec="seconds"),
+                get_local_time().isoformat(timespec="seconds"),
                 weather_data["temperature"],
                 weather_data["wind_speed"],
                 weather_data["weather"],
@@ -681,7 +684,7 @@ def save_cached_tide(lat: float, lon: float, tide_data: dict):
             """,
             (
                 cache_key,
-                datetime.now().isoformat(timespec="seconds"),
+                get_local_time().isoformat(timespec="seconds"),
                 tide_data.get("noaa_station_id"),
                 tide_data.get("noaa_station_name"),
                 tide_data.get("station_distance_miles"),
@@ -950,7 +953,7 @@ def get_today_high_low_predictions(station_id: str) -> list[dict]:
 
 def infer_tide_stage(predictions: list[dict], current_time: datetime | None = None) -> str:
     if current_time is None:
-        current_time = datetime.now()
+        current_time = get_local_time()
 
     previous_event = None
     next_event = None
@@ -2390,7 +2393,7 @@ if page == "Fishing Report":
 
             selected_date = st.date_input(
                 "Date",
-                value=datetime.now(),
+                value=get_local_time().date(),
                 key="report_date"
             )
 
@@ -2431,7 +2434,7 @@ if page == "Fishing Report":
                 "Time of Day",
                 time_options,
                 format_func=lambda x: x[0],
-                index=datetime.now().hour,
+                index=get_local_time().hour,
                 key="report_time"
             )
 
@@ -2487,7 +2490,7 @@ if page == "Fishing Report":
 
             save_fishing_report({
                 "angler_id": selected_angler_id,
-                "generated_at": datetime.now().isoformat(),
+                "generated_at": get_local_time().isoformat(),
                 "species": species,
                 "latitude": lat,
                 "longitude": lon,
@@ -2869,7 +2872,7 @@ if page == "Log Catch":
         
         catch_entry = {
             "angler_id": selected_angler_id,
-            "timestamp": datetime.now().strftime("%Y-%m-%d %H:%M"),
+            "timestamp": get_local_time().strftime("%Y-%m-%d %H:%M"),
             "species": species,
             "fish_count": fish_count,
             "fish_lengths": fish_lengths,
