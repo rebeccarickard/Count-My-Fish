@@ -1111,6 +1111,16 @@ KNOWN_NC_LOCATIONS = {
     "bogue sound": (34.7000, -76.8500, "Bogue Sound, NC"),
     "core sound": (34.8500, -76.4500, "Core Sound, NC"),
     "newport river": (34.7400, -76.7000, "Newport River, NC"),
+    "portsmouth island": (35.0720, -76.0300, "Portsmouth Island, NC"),
+    "portsmouth island nc": (35.0720, -76.0300, "Portsmouth Island, NC"),
+    "cape lookout bight": (34.6210, -76.5340, "Cape Lookout Bight, NC"),
+    "davis": (34.7963, -76.4585, "Davis, NC"),
+    "davis nc": (34.7963, -76.4585, "Davis, NC"),
+    "stacy": (34.7940, -76.4320, "Stacy, NC"),
+    "stacy nc": (34.7940, -76.4320, "Stacy, NC"),
+    "sea level": (34.8607, -76.3905, "Sea Level, NC"),
+    "sea level nc": (34.8607, -76.3905, "Sea Level, NC"),
+    "mhc": (34.7229, -76.7260, "Morehead City, NC"),
 
     # =========================================================
     # CRAVEN / PAMLICO / NEUSE REGION
@@ -1154,6 +1164,13 @@ KNOWN_NC_LOCATIONS = {
     "grimesland": (35.5638, -77.1930, "Grimesland, NC"),
     "grimesland nc": (35.5638, -77.1930, "Grimesland, NC"),
     "tar river": (35.6500, -77.3500, "Tar River, NC"),
+    "tarboro": (35.8968, -77.5358, "Tarboro, NC"),
+    "tarboro nc": (35.8968, -77.5358, "Tarboro, NC"),
+    "washington park": (35.5407, -77.0347, "Washington Park, NC"),
+    "washington park nc": (35.5407, -77.0347, "Washington Park, NC"),
+    "tranters creek": (35.5000, -77.0900, "Tranters Creek, NC"),
+    "chicod creek": (35.5200, -77.1800, "Chicod Creek, NC"),
+    "pungo river": (35.4200, -76.6200, "Pungo River, NC"),
 
     # =========================================================
     # ALBEMARLE / NORTHEASTERN NC
@@ -1176,6 +1193,8 @@ KNOWN_NC_LOCATIONS = {
     "columbia nc": (35.9191, -76.2527, "Columbia, NC"),
     "manteo": (35.9082, -75.6757, "Manteo, NC"),
     "manteo nc": (35.9082, -75.6757, "Manteo, NC"),
+    "wanchese": (35.8421, -75.6385, "Wanchese, NC"),
+    "wanchese nc": (35.8421, -75.6385, "Wanchese, NC"),
     "roanoke island": (35.9000, -75.6600, "Roanoke Island, NC"),
     "roanoke river": (35.9500, -76.7000, "Roanoke River, NC"),
     "perquimans river": (36.1800, -76.4200, "Perquimans River, NC"),
@@ -1214,6 +1233,13 @@ KNOWN_NC_LOCATIONS = {
     "ocracoke nc": (35.1146, -75.9813, "Ocracoke, NC"),
     "ocracoke inlet": (35.0677, -76.0240, "Ocracoke Inlet, NC"),
     "hatteras inlet": (35.2010, -75.7500, "Hatteras Inlet, NC"),
+    "bodie island": (35.8185, -75.5630, "Bodie Island, NC"),
+    "pea island": (35.7200, -75.5000, "Pea Island, NC"),
+    "pea island nc": (35.7200, -75.5000, "Pea Island, NC"),
+    "frisco": (35.2354, -75.6285, "Frisco, NC"),
+    "frisco nc": (35.2354, -75.6285, "Frisco, NC"),
+    "kdh": (36.0307, -75.6760, "Kill Devil Hills, NC"),
+    "cape point": (35.2320, -75.5280, "Cape Point, NC"),
 
     # =========================================================
     # SOUNDS / LARGE WATER BODIES / REFUGES
@@ -1228,6 +1254,58 @@ KNOWN_NC_LOCATIONS = {
     "pocosin lakes": (35.7500, -76.4000, "Pocosin Lakes, NC"),
     "lake mattamuskeet": (35.5100, -76.1800, "Lake Mattamuskeet, NC"),
     "phelps lake": (35.7300, -76.5600, "Phelps Lake, NC"),
+
+    # =========================================================
+    # SMALLER EASTERN NC RIVERS / CREEKS / ESTUARIES /WATERWAYS
+    # =========================================================
+
+    # CARTERET / CORE / DOWN EAST
+    "north river": (34.7600, -76.6200, "North River, NC"),
+    "south river": (34.8900, -76.5800, "South River, NC"),
+    "bay river": (35.2100, -76.6100, "Bay River, NC"),
+    "jarrett bay": (34.8600, -76.5200, "Jarrett Bay, NC"),
+    "thorofare bay": (34.7900, -76.5000, "Thorofare Bay, NC"),
+    "west bay": (35.2700, -76.5600, "West Bay, NC"),
+    "east bay": (35.1800, -76.4300, "East Bay, NC"),
+
+    # PAMLICO / BEAUFORT / HYDE
+    "durham creek": (35.4300, -76.7600, "Durham Creek, NC"),
+    "south creek": (35.3900, -76.7600, "South Creek, NC"),
+    "swanquarter": (35.4060, -76.3310, "Swanquarter, NC"),
+    "swanquarter nc": (35.4060, -76.3310, "Swanquarter, NC"),
+    "rose bay": (35.5200, -76.1800, "Rose Bay, NC"),
+    "juniper bay": (35.4500, -76.2000, "Juniper Bay, NC"),
+    "wysocking bay": (35.2800, -76.5300, "Wysocking Bay, NC"),
+
+    # CRAVEN / NEUSE
+    "adams creek": (34.9500, -76.8500, "Adams Creek, NC"),
+    "clubfoot creek": (34.9800, -76.8700, "Clubfoot Creek, NC"),
+    "brice creek": (35.0400, -77.0300, "Brice Creek, NC"),
+    "slocum creek": (34.9800, -76.9600, "Slocum Creek, NC"),
+
+    # OUTER BANKS / SOUNDS
+    "stumpy point": (35.7000, -75.7600, "Stumpy Point, NC"),
+    "stumpy point nc": (35.7000, -75.7600, "Stumpy Point, NC"),
+    "engelhard": (35.5100, -75.9900, "Engelhard, NC"),
+    "engelhard nc": (35.5100, -75.9900, "Engelhard, NC"),
+    "kitty hawk bay": (36.0600, -75.7200, "Kitty Hawk Bay, NC"),
+    "currituck river": (36.3800, -76.0000, "Currituck River, NC"),
+    "north river currituck": (36.4200, -76.0000, "North River, NC"),
+
+    # ALBEMARLE / NORTHEAST
+    "scuppernong river": (35.8800, -76.2200, "Scuppernong River, NC"),
+    "yeopim river": (36.1500, -76.5500, "Yeopim River, NC"),
+    "little river": (36.0800, -76.4700, "Little River, NC"),
+    "salmon creek": (36.0200, -76.7700, "Salmon Creek, NC"),
+    "middle river": (36.0200, -76.8600, "Middle River, NC"),
+
+    # NEW HANOVER / BRUNSWICK
+    "myrtle grove sound": (34.0800, -77.8800, "Myrtle Grove Sound, NC"),
+    "banks channel": (34.2100, -77.8000, "Banks Channel, NC"),
+
+    # PENDER / ONSLOW
+    "everett bay": (34.4700, -77.4500, "Everett Bay, NC"),
+    "stones creek": (34.7700, -77.2200, "Stones Creek, NC"),
 }
 
 def normalize_location_query(location_name):
