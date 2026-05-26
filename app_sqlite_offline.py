@@ -319,16 +319,7 @@ def is_cache_fresh(cached_at: str, max_age_minutes: int = CACHE_MAX_AGE_MINUTES)
 
 
 def is_online() -> bool:
-    if connection_mode == "Offline":
-        return False
-    if connection_mode == "Online":
-        return True
-
-    try:
-        requests.get("https://api.open-meteo.com", timeout=3)
-        return True
-    except requests.RequestException:
-        return False
+    return connection_mode != "Offline"
 
 
 def save_catch(catch_entry: dict):
@@ -738,13 +729,14 @@ def fetch_live_weather_from_api(lat: float, lon: float) -> dict:
 def get_live_weather(lat: float, lon: float) -> dict:
     cached = get_cached_weather(lat, lon)
 
-    if is_online():
+    if connection_mode != "Offline":
         try:
             live_weather = fetch_live_weather_from_api(lat, lon)
             save_cached_weather(lat, lon, live_weather)
             return live_weather
-        except requests.RequestException:
-            pass
+
+        except Exception as e:
+            st.warning(f"Live weather unavailable: {e}")
 
     if cached is not None:
         cached["source"] = "cached"
@@ -927,7 +919,7 @@ def infer_tide_stage(predictions: list[dict], current_time: datetime | None = No
 def get_realtime_tide(lat: float, lon: float) -> dict:
     cached = get_cached_tide(lat, lon)
 
-    if is_online():
+    if connection_mode != "Offline":
         try:
             station = get_nearest_noaa_station(lat, lon)
             latest_level = get_latest_tide_level(station["id"])
@@ -943,10 +935,12 @@ def get_realtime_tide(lat: float, lon: float) -> dict:
                 "tide_stage": tide_stage,
                 "source": "live",
             }
+
             save_cached_tide(lat, lon, live_tide)
             return live_tide
-        except requests.RequestException:
-            pass
+
+        except Exception as e:
+            st.warning(f"Live tide unavailable: {e}")
 
     if cached is not None:
         cached["source"] = "cached"
