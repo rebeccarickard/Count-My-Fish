@@ -12,6 +12,7 @@ from streamlit_geolocation import streamlit_geolocation
 import plotly.express as px
 import base64
 import hashlib
+import time
 
 def get_base64_image(image_path):
     with open(image_path, "rb") as img_file:
@@ -704,26 +705,36 @@ def fetch_live_weather_from_api(lat: float, lon: float) -> dict:
         f"&wind_speed_unit=mph"
     )
 
-    response = requests.get(url, timeout=20)
-    response.raise_for_status()
-    data = response.json()["current"]
+    last_error = None
 
-    weather_map = {
-        0: "sunny",
-        1: "mostly_clear",
-        2: "partly_cloudy",
-        3: "cloudy",
-        61: "rainy",
-        63: "rainy",
-        65: "rainy",
-    }
+    for attempt in range(3):
+        try:
+            response = requests.get(url, timeout=20)
+            response.raise_for_status()
+            data = response.json()["current"]
+            
+            weather_map = {
+                0: "sunny",
+                1: "mostly_clear",
+                2: "partly_cloudy",
+                3: "cloudy",
+                61: "rainy",
+                63: "rainy",
+                65: "rainy",
+            }
 
-    return {
-        "temperature": data["temperature_2m"],
-        "wind_speed": data["wind_speed_10m"],
-        "weather": weather_map.get(data["weather_code"], "unknown"),
-        "source": "live",
-    }
+            return {
+                "temperature": data["temperature_2m"],
+                "wind_speed": data["wind_speed_10m"],
+                "weather": weather_map.get(data["weather_code"], "unknown"),
+                "source": "live",
+            }
+        
+        except requests.RequestException as e:
+            last_error = e
+            time.sleep(1)
+
+    raise last_error
 
 
 def get_live_weather(lat: float, lon: float) -> dict:
